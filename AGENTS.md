@@ -1,0 +1,22 @@
+# Nothing Desktop
+Native Windows WPF application; .NET 8, no third-party runtime packages.
+Build: powershell -NoProfile -File build.ps1 -Test. Local SDK lives under .tools/dotnet (ignored).
+Run: run.cmd. Published executable: artifacts/Nothing.Desktop/Nothing.Desktop.exe. Requires Microsoft.WindowsDesktop.App 8 x64.
+Protocol reference: https://github.com/Senooy/nothing-x-mac/blob/main/Protocol.md (MIT). Independent implementation; no upstream source files copied.
+Headphone (1) uses Bluetooth Classic RFCOMM NT LINK UUID AEAC4A03-DFF5-498F-843A-34487CF133EB. Resolve through SDP; never hard-code channel 15 or use generic serial COM service.
+Frame = 55 60 01 + command LE16 + payload length LE16 + operation byte + payload + Modbus CRC16 LE16. Reply command clears bit 15; match operation AND command. Alternate event control bytes exist.
+Native SOCKADDR_BTH must use Pack=1 (30 bytes). BLUETOOTH_DEVICE_INFO is 560 bytes; do not pack it.
+Tests: 15 real production codec/ABI checks, --hardware optional read-only real-device test, --verify-anc-write explicitly re-applies existing ANC mode and verifies read-back.
+WPF smoke test: executable --smoke-test; add --hardware-ui to connect read-only and test actual telemetry plus local EQ draft/reset. Screenshots/results go to .agent_tmp.
+Hardware tested 2026-11-08: battery, firmware, ANC, EQ preset/custom eight-band layout, spatial, latency, multipoint, codec; same-mode ANC write/ACK/read-back passed. Custom EQ and optional settings writes not hardware-tested.
+Preserve device custom EQ frequencies, filter types, Q, and preamp; actual firmware may differ from default 8-band frequencies. EQ writes locked when spatial state is on or unknown.
+Do not implement loud find-device, firmware updates, or codec writes without explicit scope. Codec preference is not actual negotiated Windows audio codec.
+Machine NuGet configuration contains a stale VS fallback folder; build.ps1 overrides fallback per command only. Never change machine package configs.
+
+Version 0.2 redesign: all listening settings and EQ live on Overview; Device holds firmware/control-link/diagnostics. Minimal Nothing X-inspired dark theme defaults; theme button persists preference to %LOCALAPPDATA%/NothingDesktop/theme.txt.
+Battery bug root cause: firmware 1.0.1.81 NT LINK C007 returned 010664 (100%) while Windows HFP AG DEVPKEY_Bluetooth_Battery returned 90%. WindowsBattery reads cfgmgr32 native property {104EA319-6EE2-4701-BD47-8DDBF425BBE5}, pid 2, matching selected device MAC. Prefer valid Windows reading; explicit protocol fallback; preserve both sources in diagnostics. Poll every 10 s plus E001 notifications; full settings every 30 s.
+Custom titlebar uses WindowStyle=None, UseAeroCaptionButtons=false and IsHitTestVisibleInChrome=true. Drag handler must ignore interactive ancestors. Regression smoke tests verify WM_NCHITTEST=HTCLIENT and actual minimize/maximize/restore/close actions.
+ANC level row is COLLAPSED unless actual mode is 1 through 4; not just disabled.
+EQ graph is a modeled 48kHz cascaded RBJ biquad response with log frequency, actual filter type/Q/frequency/gain/preamp. It is NOT an audio spectrum or measured acoustic response. Red custom slot/draft differs from dashed active Balanced curve; never imply inactive saved curve is currently applied. Math reference: https://www.w3.org/TR/audio-eq-cookbook/
+Official product render source: https://cdn.shopify.com/s/files/1/0579/8091/1768/files/headphone-1-black-3_4-view-thumbnail.webp?v=1788842815 (Nothing official product page). Downloaded and converted locally to Assets/Headphone.png; no runtime network requests. Product branding/art belongs to Nothing; app is unofficial.
+Current checks: 24 core/protocol/ABI/battery/EQ tests plus 35 real WPF/live-hardware smoke assertions including both themes and 980px/1280px layouts. Smoke tests mutate only local display state, not headphone listening settings.

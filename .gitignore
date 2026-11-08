@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.tools/
+.agent_tmp/
+artifacts/
+.vs/
+*.user
