@@ -1,7 +1,46 @@
+# .NET build and publish outputs
 **/bin/
 **/obj/
-.tools/
-.agent_tmp/
-artifacts/
+/artifacts/
+/publish/
+
+# Local SDKs and agent/test scratch space
+/.tools/
+/.agent_tmp/
+
+# Test results, coverage and diagnostic dumps
+**/TestResults/
+**/coverage/
+coverage.xml
+coverage.cobertura.xml
+coverage.opencover.xml
+*.coverage
+*.coveragexml
+*.trx
+*.dmp
+*.log
+/nothing-diagnostics-*.txt
+
+# Visual Studio, Rider and per-user IDE settings
 .vs/
+.idea/
 *.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln.iml
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Editor backups and operating-system files
+*.tmp
+*.temp
+*.bak
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
