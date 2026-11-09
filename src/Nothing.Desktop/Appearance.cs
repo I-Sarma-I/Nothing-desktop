@@ -19,9 +19,18 @@ public static class Appearance
     public static void Apply(bool dark, bool persist = true)
     {
         IsDark = dark;
-        var keys = new[] { "Page", "CardFill", "Raised", "Ink", "Muted", "Line", "Selected", "SelectedInk" };
-        var colors = dark ? new[] { "#090909", "#1C1C1E", "#2A2A2C", "#F2F2F2", "#96969B", "#343438", "#F0F0F0", "#101010" } : new[] { "#F4F4F3", "#FFFFFF", "#E9E9E7", "#161616", "#747477", "#DADAD8", "#171717", "#FFFFFF" };
-        for (var i = 0; i < keys.Length; i++) Application.Current.Resources[keys[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i]));
+        var palette = new (string Key, string Dark, string Light)[]
+        {
+            ("Page", "#090909", "#F1F1EE"), ("SidebarFill", "#101010", "#E8E8E4"),
+            ("CardFill", "#1C1C1E", "#FFFFFF"), ("Raised", "#2A2A2C", "#E7E7E3"),
+            ("Ink", "#F2F2F2", "#171719"), ("Muted", "#A9A9AE", "#55555B"),
+            ("Line", "#3D3D42", "#D1D1CD"), ("ControlLine", "#77777E", "#85858A"),
+            ("DisabledInk", "#9999A1", "#64646B"), ("DisabledFill", "#252527", "#E3E3E0"),
+            ("Selected", "#F0F0F0", "#171719"), ("SelectedInk", "#101010", "#FFFFFF"),
+            ("Accent", "#FF625E", "#B51F28"), ("Green", "#42D999", "#237344")
+        };
+        foreach (var (key, darkColor, lightColor) in palette)
+            Application.Current.Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(dark ? darkColor : lightColor));
         if (!persist) return;
         try { System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(SettingsFile)!); System.IO.File.WriteAllText(SettingsFile, dark ? "dark" : "light"); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }

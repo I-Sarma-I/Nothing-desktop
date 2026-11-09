@@ -44,3 +44,6 @@ coverage.opencover.xml
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Workspace-local agent skills
+/.agents/skills/

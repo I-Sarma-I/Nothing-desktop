@@ -5,7 +5,9 @@ namespace Nothing.Desktop;
 
 public sealed record PairedDevice(string Name, ulong Address, bool Connected)
 {
+    public string DisplayName => Name.StartsWith("Nothing ", StringComparison.OrdinalIgnoreCase) ? Name[8..] : Name;
     public string AddressText => string.Join(":", Enumerable.Range(0, 6).Reverse().Select(i => ((Address >> (i * 8)) & 255).ToString("X2")));
+    public string AddressSuffix => "ID " + AddressText[^8..];
     public override string ToString() => $"{Name}   /   {AddressText}";
 }
 

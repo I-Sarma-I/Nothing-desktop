@@ -26,6 +26,11 @@ public sealed class BandViewModel : INotifyPropertyChanged
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private HeadphoneClient? client;
+    private readonly DeviceLibrary deviceLibrary;
+    private bool libraryInitialized, storageReady = true, pickerOpen, scanning;
+    private string pickerStatus = "";
+    private PairedDevice? candidateDevice, pendingRemoval;
+    private IInputElement? modalReturnFocus;
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer poll = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly Queue<string> journal = new();
@@ -46,6 +51,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (Environment.GetCommandLineArgs().Contains("--smoke-test")) Appearance.Apply(true, false); else Appearance.Load();
         InitializeComponent();
+        var settingsDirectory = Environment.GetCommandLineArgs().Contains("--smoke-test")
+            ? Path.Combine(Environment.CurrentDirectory, ".agent_tmp", "device-library-smoke", Environment.ProcessId.ToString(CultureInfo.InvariantCulture))
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NothingDesktop");
+        deviceLibrary = new DeviceLibrary(Path.Combine(settingsDirectory, "devices.json"));
+        try
+        {
+            libraryInitialized = deviceLibrary.Exists;
+            var saved = deviceLibrary.Load();
+            foreach (var device in saved.Devices.Where(d => IsHeadphoneOne(d.Name))) Devices.Add(device);
+            selectedDevice = Devices.FirstOrDefault(d => d.Address == saved.SelectedAddress) ?? Devices.FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { storageReady = false; libraryInitialized = true; Status(ex.Message, true); }
         DataContext = this;
         foreach (var label in new[] { "55 Hz", "110 Hz", "220 Hz", "440 Hz", "1.32 kHz", "3.3 kHz", "6.6 kHz", "13.2 kHz" })
         {
@@ -58,20 +76,48 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             };
             Bands.Add(band);
         }
-        poll.Tick += async (_, _) => { if (connected && !busy) await RunAsync(async () => { if (++pollTick % 3 == 0) await RefreshTelemetryAsync(); else await RefreshLiveAsync(); }, false); };
+        poll.Tick += async (_, _) => { if (connected && !busy && CanUseContent) await RunAsync(async () => { if (++pollTick % 3 == 0) await RefreshTelemetryAsync(); else await RefreshLiveAsync(); }, false); };
         Log("Ready.");
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<PairedDevice> Devices { get; } = [];
     public ObservableCollection<BandViewModel> Bands { get; } = [];
-    public PairedDevice? SelectedDevice { get => selectedDevice; set { selectedDevice = value; Notify(); } }
-    public string ConnectionLabel => connected ? "Connected" : busy ? "Connecting" : "Disconnected";
-    public Brush StatusBrush => Brush(connected ? "#9EB685" : busy ? "#E2BC64" : "#D35E53");
+    public ObservableCollection<PairedDevice> CandidateDevices { get; } = [];
+    public PairedDevice? SelectedDevice
+    {
+        get => selectedDevice;
+        set
+        {
+            if (selectedDevice == value) return;
+            if (busy || value != null && !Devices.Contains(value)) { Notify(); return; }
+            if (eqDirty && MessageBox.Show(this, "Switch devices and discard the unsaved EQ draft?", "Unsaved curve", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            { Notify(); return; }
+            if (connected) Disconnect(); else ClearTelemetry();
+            selectedDevice = value;
+            SaveDevices(); Notify();
+        }
+    }
+    public PairedDevice? CandidateDevice { get => candidateDevice; set { candidateDevice = value; Notify(); } }
+    public bool IsPickerOpen => pickerOpen;
+    public bool IsRemoveOpen => pendingRemoval != null;
+    public bool CanUseContent => !pickerOpen && pendingRemoval == null;
+    public bool CanManageDevices => !busy && !scanning;
+    public bool CanScanDevices => !scanning;
+    public bool CanAddDevice => !busy && !scanning && CandidateDevice != null;
+    public bool HasNoDevices => Devices.Count == 0;
+    public bool HasSelectedDevice => SelectedDevice != null;
+    public bool HasCandidates => CandidateDevices.Count != 0;
+    public bool HasNoCandidates => !scanning && !HasCandidates;
+    public string PickerStatus => pickerStatus;
+    public string RemovePrompt => $"Remove {pendingRemoval?.Name} from Nothing Desktop?";
+    public string SelectedDeviceName => SelectedDevice?.DisplayName ?? "No device selected";
+    public string ConnectionLabel => connected ? "Connected" : busy ? "Working..." : SelectedDevice == null ? "No device selected" : "Disconnected";
+    public Brush StatusBrush => (Brush)FindResource(connected ? "Green" : busy ? "Muted" : "Accent");
     public string ConnectButtonText => connected ? "Disconnect" : busy ? "Connecting" : "Connect";
-    public bool CanConnect => !busy;
+    public bool CanConnect => !busy && SelectedDevice != null;
     public bool CanRefresh => connected && !busy;
-    public bool CanChooseDevice => !busy && !connected;
+
     public bool CanAnc => connected && !busy && anc.HasValue;
     public bool ShowAncLevel => connected && anc is >= 1 and <= 4;
     public bool CanAncLevel => CanAnc && anc is >= 1 and <= 4;
@@ -99,11 +145,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string SpatialText => spatial switch { true => "On", false => "Off", _ => "Unavailable" };
     public string CodecText => codec;
     public string DeviceAddress => connected ? selectedDevice?.AddressText ?? "—" : "Not connected";
-    public string DiscoveryText => Devices.Count == 0 ? "No paired Headphone (1) found" : $"{Devices.Count} paired device(s)";
+    public string DiscoveryText => Devices.Count == 0 ? "Use Add device in the sidebar to select a paired Headphone (1)." : $"{Devices.Count} saved device(s). Add or remove devices in the sidebar.";
     public string PacketText => client == null ? "No active session" : $"TX {client.Transmitted} / RX {client.Received}";
     public string JournalText => string.Join(Environment.NewLine, journal);
     public string Message => message;
-    private static Brush Brush(string color) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+
     private void Notify() { PropertyChanged?.Invoke(this, new(null)); DrawEq(); }
     private void Log(string text) { journal.Enqueue($"{DateTime.Now:HH:mm:ss}  {text}"); while (journal.Count > 70) journal.Dequeue(); Notify(); }
     private void Status(string text, bool error = false) { message = text; messageError = error; Log(text); }
@@ -131,12 +177,102 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var found = await Task.Run(BluetoothNative.Discover, lifetime.Token);
         if (closed) return;
-        Devices.Clear();
-        foreach (var d in found.Where(d => IsHeadphoneOne(d.Name))) Devices.Add(d);
-        SelectedDevice = Devices.FirstOrDefault();
-        Log($"Discovery: {Devices.Count} paired Headphone (1) device(s).");
+        if (!libraryInitialized)
+        {
+            foreach (var device in found.Where(d => IsHeadphoneOne(d.Name))) Devices.Add(device);
+            selectedDevice = Devices.FirstOrDefault();
+            libraryInitialized = true;
+            SaveDevices();
+        }
+        Log($"Discovery: {found.Count(d => IsHeadphoneOne(d.Name))} paired Headphone (1) device(s); {Devices.Count} saved.");
     }
-
+    private void SaveDevices()
+    {
+        if (!storageReady) { Status("Changes are available this session only: the saved device file could not be read.", true); return; }
+        try { deviceLibrary.Save(Devices, selectedDevice?.Address); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { Status("Could not save devices: " + ex.Message, true); }
+    }
+    private async void AddDeviceClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanManageDevices || !CanUseContent) return;
+        modalReturnFocus = Keyboard.FocusedElement;
+        pickerOpen = true; CandidateDevices.Clear(); CandidateDevice = null; Notify();
+        ClosePickerButton.Focus();
+        await ScanCandidatesAsync();
+        if (pickerOpen && HasCandidates) CandidateList.Focus();
+    }
+    private void PopulateCandidates(IEnumerable<PairedDevice> found)
+    {
+        var previous = CandidateDevice?.Address;
+        CandidateDevices.Clear();
+        foreach (var device in found.Where(d => IsHeadphoneOne(d.Name) && Devices.All(saved => saved.Address != d.Address)).DistinctBy(d => d.Address))
+            CandidateDevices.Add(device);
+        CandidateDevice = CandidateDevices.FirstOrDefault(d => d.Address == previous) ?? CandidateDevices.FirstOrDefault();
+    }
+    private async Task ScanCandidatesAsync()
+    {
+        if (scanning) return;
+        scanning = true; pickerStatus = "Looking for paired Headphone (1) devices..."; Notify();
+        try
+        {
+            var found = await Task.Run(BluetoothNative.Discover, lifetime.Token);
+            if (closed || !pickerOpen) return;
+            PopulateCandidates(found);
+            pickerStatus = HasCandidates ? $"{CandidateDevices.Count} paired device(s) available." : "No new paired Headphone (1) found. Already added devices stay in the sidebar.";
+        }
+        catch (OperationCanceledException) { if (!closed) pickerStatus = "Device search canceled."; }
+        catch (Exception ex) when (ex is Win32Exception or IOException or UnauthorizedAccessException)
+        { pickerStatus = "Could not search Bluetooth devices: " + ex.Message; }
+        finally { scanning = false; if (!closed) Notify(); }
+    }
+    private async void RescanDevicesClick(object sender, RoutedEventArgs e) => await ScanCandidatesAsync();
+    private void AddSelectedDeviceClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanAddDevice || CandidateDevice is not { } device) return;
+        if (Devices.All(d => d.Address != device.Address)) Devices.Add(device);
+        if (SelectedDevice == null) SelectedDevice = device;
+        SaveDevices(); CloseDeviceModal(); Notify();
+    }
+    private void RemoveDeviceClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanManageDevices || !CanUseContent || sender is not Button { Tag: PairedDevice device }) return;
+        modalReturnFocus = Keyboard.FocusedElement;
+        pendingRemoval = device; Notify();
+        CancelRemoveButton.Focus();
+        e.Handled = true;
+    }
+    private void ConfirmRemoveClick(object sender, RoutedEventArgs e)
+    {
+        if (pendingRemoval is not { } device || busy) return;
+        var index = Devices.IndexOf(device);
+        if (index < 0) { CloseDeviceModal(); return; }
+        var active = SelectedDevice?.Address == device.Address;
+        if (active)
+        {
+            Disconnect();
+            selectedDevice = null;
+        }
+        Devices.RemoveAt(index);
+        if (active)
+        {
+            selectedDevice = Devices.Count == 0 ? null : Devices[Math.Min(index, Devices.Count - 1)];
+            MainScroll.ScrollToTop();
+        }
+        SaveDevices(); CloseDeviceModal(); Notify();
+        DeviceList.Focus();
+    }
+    private void CloseDeviceModal()
+    {
+        pickerOpen = false; pendingRemoval = null; Notify();
+        if (modalReturnFocus is UIElement { IsVisible: true, IsEnabled: true } element) element.Focus();
+        else AddDeviceButton.Focus();
+    }
+    private void CloseDeviceModalClick(object sender, RoutedEventArgs e) => CloseDeviceModal();
+    private void WindowKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && !CanUseContent) { CloseDeviceModal(); e.Handled = true; }
+    }
     internal static bool IsHeadphoneOne(string name)
     {
         var normalized = new string(name.Where(char.IsLetterOrDigit).ToArray());
@@ -152,8 +288,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         await RunAsync(async () =>
         {
-            if (SelectedDevice == null) await ScanAsync();
-            if (SelectedDevice == null) { ShowPage("Device"); Status("No paired Headphone (1) found. Pair in Windows, unplug USB-C, then scan again.", true); return; }
+            if (SelectedDevice == null) { Status("Add and select a device in the sidebar before connecting.", true); return; }
             ClearTelemetry();
             var next = new HeadphoneClient(); client = next;
             next.ConnectionLost += text =>
@@ -298,7 +433,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         eqDirty = false; DrawEq(); Notify();
     }
     private async void RefreshClick(object sender, RoutedEventArgs e) => await RunAsync(RefreshTelemetryAsync, false);
-    private async void ScanClick(object sender, RoutedEventArgs e) => await RunAsync(ScanAsync, false);
+
     private async void AncClick(object sender, RoutedEventArgs e)
     {
         if (updating || !CanAnc || sender is not RadioButton radio || !byte.TryParse(radio.Tag?.ToString(), out var mode)) return;

@@ -29,9 +29,9 @@ public sealed class EqResponsePlot : FrameworkElement
         ToolTip = "Modeled EQ response at 48 kHz, not a live audio spectrum or acoustic measurement.";
     }
     public void SetProfiles(EqualizerProfile? stored, EqualizerProfile? playing, bool isDraft) { curve = stored; active = playing; draft = isDraft; InvalidateVisual(); }
-    private void Text(DrawingContext dc, string text, Point point, Brush brush, double size = 10, bool right = false)
+    private void Text(DrawingContext dc, string text, Point point, Brush brush, double size = 11, bool right = false)
     {
-        var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface((FontFamily)FindResource("UiFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
         dc.DrawText(formatted, right ? new(point.X - formatted.Width, point.Y) : point);
     }
     protected override void OnRender(DrawingContext dc)
@@ -45,13 +45,13 @@ public sealed class EqResponsePlot : FrameworkElement
         foreach (var db in new[] { -12, 0, 12 })
         {
             dc.DrawLine(new Pen(GridBrush, db == 0 ? 1 : 0.5), new(box.Left, Y(db)), new(box.Right, Y(db)));
-            Text(dc, db > 0 ? $"+{db}" : db.ToString(), new(box.Left - 8, Y(db) - 7), MutedBrush, 9, true);
+            Text(dc, db > 0 ? $"+{db}" : db.ToString(), new(box.Left - 8, Y(db) - 7), MutedBrush, 11, true);
         }
         foreach (var f in new[] { 20, 100, 1000, 10000, 20000 })
         {
             dc.DrawLine(new Pen(GridBrush, 0.5) { DashStyle = DashStyles.Dot }, new(X(f), box.Top), new(X(f), box.Bottom));
             var label = f >= 1000 ? $"{f / 1000}k" : f.ToString();
-            Text(dc, label, new(X(f) - (f == 20000 ? 16 : 4), box.Bottom + 9), MutedBrush, 9);
+            Text(dc, label, new(X(f) - (f == 20000 ? 16 : 4), box.Bottom + 9), MutedBrush, 11);
         }
         if (curve == null)
         {
@@ -91,7 +91,7 @@ public sealed class EqResponsePlot : FrameworkElement
             Text(dc, $"{f:0} Hz   {db:+0.0;-0.0;0.0} dB", new(Math.Clamp(hover - 55, box.Left + 4, Math.Max(box.Left + 4, box.Right - 145)), box.Top + 5), InkBrush, 11);
         }
         dc.Pop();
-        Text(dc, draft ? "Draft" : "Custom slot", new(box.Left, 0), MutedBrush, 9);
-        if (active != null) Text(dc, "Dashed: active", new(box.Right, 0), MutedBrush, 9, true);
+        Text(dc, draft ? "Draft" : "Custom slot", new(box.Left, 0), MutedBrush, 11);
+        if (active != null) Text(dc, "Dashed: active", new(box.Right, 0), MutedBrush, 11, true);
     }
 }

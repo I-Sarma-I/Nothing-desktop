@@ -69,6 +69,47 @@ Test("EQ invalid frequency rejected and log axis round trips", () => { Reject(()
 Test("Battery source recovers when Windows property disappears", () => { var first=BatteryReading.Resolve(100,false,90); var next=BatteryReading.Resolve(88,false,null); Assert(first.Percent==90 && next.Percent==88 && next.Source=="Headphone"); });
 Test("High shelf asymptotes and cascaded gain", () => { var p=EqualizerProfile.Flat();p.Bands[7]=new(2,6,3000,0.7071f);Assert(Math.Abs(EqualizerResponse.Decibels(p,20))<0.01);Assert(Math.Abs(EqualizerResponse.Decibels(p,22000)-6)<0.01);p.Preamp=-3;Assert(Math.Abs(EqualizerResponse.Decibels(p,20)+3)<0.01); });
 Test("EQ negative and positive gains are reciprocal", () => {foreach(var type in new byte[]{0,1,2}){var p=EqualizerProfile.Flat();p.Bands[0]=new(type,6,1000,0.7071f);var a=EqualizerResponse.Decibels(p,400);p.Bands[0]=p.Bands[0] with{Gain=-6};Assert(Math.Abs(a+EqualizerResponse.Decibels(p,400))<0.0001);}});
+Test("Saved devices round-trip without stale Windows connection state", () => {
+    var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NothingDesktop-tests-" + Guid.NewGuid());
+    try {
+        var library = new DeviceLibrary(System.IO.Path.Combine(directory, "devices.json"));
+        Assert(!library.Exists && library.Load().Devices.Length == 0);
+        var device = new PairedDevice("Headphone (1)", 0x123456789ABC, true);
+        library.Save([device], device.Address);
+        var restored = library.Load();
+        Assert(library.Exists && restored.Devices.Single().Address == device.Address && !restored.Devices.Single().Connected);
+        Assert(restored.SelectedAddress == device.Address);
+    } finally { if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true); }
+});
+Test("Removing every saved device stays empty across restart", () => {
+    var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NothingDesktop-tests-" + Guid.NewGuid());
+    try {
+        var library = new DeviceLibrary(System.IO.Path.Combine(directory, "devices.json"));
+        var device = new PairedDevice("Headphone (1)", 0x123456789ABC, false);
+        library.Save([device], device.Address); library.Save([], null);
+        var restored = new DeviceLibrary(library.FilePath);
+        Assert(restored.Exists && restored.Load().Devices.Length == 0 && restored.Load().SelectedAddress == null);
+    } finally { if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true); }
+});
+Test("Saved devices deduplicate by Bluetooth address and reject invalid selection", () => {
+    var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NothingDesktop-tests-" + Guid.NewGuid());
+    try {
+        var library = new DeviceLibrary(System.IO.Path.Combine(directory, "devices.json"));
+        var device = new PairedDevice("Headphone (1)", 0x123456789ABC, false);
+        library.Save([device, device], 1);
+        var restored = library.Load(); Assert(restored.Devices.Length == 1 && restored.SelectedAddress == null);
+        Reject(() => library.Save([device with { Address = 0 }], null));
+    } finally { if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true); }
+});
+Test("Malformed saved devices report an error instead of overwriting the library", () => {
+    var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NothingDesktop-tests-" + Guid.NewGuid());
+    try {
+        System.IO.Directory.CreateDirectory(directory);
+        var path = System.IO.Path.Combine(directory, "devices.json"); System.IO.File.WriteAllText(path, "{invalid");
+        try { new DeviceLibrary(path).Load(); throw new Exception("Expected IO error"); } catch (System.IO.IOException) { }
+        Assert(System.IO.File.ReadAllText(path) == "{invalid");
+    } finally { if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true); }
+});
 Console.WriteLine($"{passed} tests passed.");
 if (args.Contains("--hardware"))
 {
