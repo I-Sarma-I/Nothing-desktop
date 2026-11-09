@@ -68,6 +68,8 @@ jobs:
       - name: Install release dependencies
         run: npm ci
 
+      - name: Test version rules and release notes
+        run: npm run test:release
       - name: Calculate version and publish
         run: npm run release
         env:
