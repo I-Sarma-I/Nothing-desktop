@@ -3,7 +3,7 @@
 **/obj/
 /artifacts/
 /publish/
-
+/node_modules/
 # Local SDKs and agent/test scratch space
 /.tools/
 /.agent_tmp/

@@ -1,0 +1,13 @@
+{
+  "name": "nothing-desktop-release-tools",
+  "version": "0.0.0-development",
+  "private": true,
+  "scripts": {
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/exec": "7.1.0",
+    "conventional-changelog-conventionalcommits": "10.4.1",
+    "semantic-release": "25.0.9"
+  }
+}
