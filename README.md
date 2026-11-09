@@ -4,6 +4,18 @@ An unofficial Windows desktop companion aiming to bring the Nothing X experience
 
 **Full device support is the goal, not the current compatibility claim.** The current implementation is an early Windows WPF app (version 0.2.0) with a verified Headphone (1) integration. Other models need their own protocol, capability and hardware validation before they can be enabled safely.
 
+## Screenshots
+
+Headphone (1) connected in dark and light mode. Device identifiers are redacted.
+
+### Dark mode
+
+![Headphone (1) connected in dark mode, showing battery, noise cancellation, settings and equaliser](docs/screenshots/connected-dark.png)
+
+### Light mode
+
+![Headphone (1) connected in light mode, showing battery, noise cancellation, settings and equaliser](docs/screenshots/connected-light.png)
+
 ## Device support
 
 | Device | Current status |
@@ -119,7 +131,7 @@ build.ps1            Restore, publish and optional tests
 run.cmd              Build-if-needed launcher
 ```
 
-Build outputs (`bin/`, `obj/`, `artifacts/`), local tooling (`.tools/`), test scratch data (`.agent_tmp/`), test results, logs, IDE user files and local environment secrets are ignored. Do not commit generated binaries, screenshots, device diagnostic exports or credentials. Recreate outputs with the build and test commands rather than checking them in.
+Build outputs (`bin/`, `obj/`, `artifacts/`), local tooling (`.tools/`), test scratch data (`.agent_tmp/`), test results, logs, IDE user files and local environment secrets are ignored. Do not commit generated binaries, temporary test screenshots, device diagnostic exports or credentials. Recreate test outputs with the build and test commands rather than checking them in. Curated README screenshots live in `docs/screenshots/` and must have device identifiers redacted.
 
 ## Contributing device support
 
